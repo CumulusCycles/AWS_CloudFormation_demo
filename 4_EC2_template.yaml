@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Mappings:
+  AWSInstanceType2Arch:
+    t1.micro:
+      Arch: PV64
+    t2.micro:
+      Arch: HVM64
+    t2.small:
+      Arch: HVM64
+    t2.medium:
+      Arch: HVM64
+
+Resources:
+  ccWebServer1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: '{{resolve:ssm:EC2-AMI-ID:1}}' # Dynamic Ref to SSM Param Store
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPrivateAppSubnet1
+      SecurityGroupIds:
+        - Fn::ImportValue: ccVPC-ccWebServerSecurityGroup
+      KeyName: '{{resolve:ssm:KeyPair:1}}'
+      Tags:
+        - Key: Name
+          Value: ccWebServer1
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            sudo su 
+            yum update -y 
+            yum install -y httpd 
+            echo "<h1>Hello, World!</h1>server: ccWebServer1" > /var/www/html/index.html 
+            echo "healthy" > /var/www/html/hc.html 
+            service httpd start
+
+  ccWebServer2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: !GetAtt AMIInfo.Id  # Custom Resource (Lambda function)
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPrivateAppSubnet2
+      SecurityGroupIds:
+        - Fn::ImportValue: ccVPC-ccWebServerSecurityGroup
+      KeyName: '{{resolve:ssm:KeyPair:1}}'
+      Tags:
+        - Key: Name
+          Value: ccWebServer2
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            sudo su 
+            yum update -y 
+            yum install -y httpd 
+            echo "<h1>Hello, World!</h1>server: ccWebServer2" > /var/www/html/index.html 
+            echo "healthy" > /var/www/html/hc.html 
+            service httpd start
+
+  AMIInfo:
+    Type: Custom::AMIInfo
+    Properties:
+      ServiceToken: !GetAtt AMIInfoFunction.Arn
+      Region: !Ref "AWS::Region"
+      Architecture: 
+        Fn::FindInMap:
+        - AWSInstanceType2Arch
+        - t2.micro
+        - Arch
+
+  AMIInfoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: cc-ami-lookup-js
+        S3Key: amilookup.js.zip
+      Handler: amilookup.handler
+      Runtime: nodejs16.x
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+            - ec2:DescribeImages
+            Resource: "*"
+
+Outputs:
+  ccWebServer1:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccWebServer1
+    Value: !Ref ccWebServer1
+
+  ccWebServer2:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccWebServer2
+    Value: !Ref ccWebServer2

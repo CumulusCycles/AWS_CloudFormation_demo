@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  ccWebServerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: ccWebServerLaunchTemplate
+      LaunchTemplateData:
+        ImageId: '{{resolve:ssm:EC2-AMI-ID:1}}' 
+        InstanceType: t2.micro
+        KeyName: '{{resolve:ssm:KeyPair:1}}'
+        Monitoring:
+          Enabled: true
+        SecurityGroupIds:
+          - Fn::ImportValue: ccVPC-ccWebServerSecurityGroup
+  
+  ccNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: '{{resolve:ssm:SNSEmail:1}}'
+          Protocol: email
+  
+  ccWebServerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: ccWebServerASG
+      VPCZoneIdentifier:
+        - Fn::ImportValue: ccVPC-ccPrivateAppSubnet1
+        - Fn::ImportValue: ccVPC-ccPrivateAppSubnet2
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      LaunchTemplate:
+        LaunchTemplateName: ccWebServerLaunchTemplate
+        Version: !GetAtt ccWebServerLaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 2
+      Tags:
+        - Key: Name
+          Value: ccWebServerASG
+          PropagateAtLaunch: true
+      TargetGroupARNs:
+        - Fn::ImportValue: ccALB-ccAlbTargetGroup
+      NotificationConfiguration:
+        TopicARN: !Ref ccNotificationTopic
+        NotificationTypes:
+          - 'autoscaling:EC2_INSTANCE_LAUNCH'
+          - 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'
+          - 'autoscaling:EC2_INSTANCE_TERMINATE'
+          - 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR'
+
+  ccWebServerScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref ccWebServerASG
+      Cooldown: 60
+      ScalingAdjustment: -1
+
+  ccCPUAlarmHigh:
+    Type:  AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-Up when CPU > 75% for 10min
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 75
+      AlarmActions:
+        - !Ref ccWebServerScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref ccWebServerASG
+      ComparisonOperator: GreaterThanThreshold
+
+  ccCPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-Down when CPU < 70% for 10min
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 70
+      AlarmActions:
+        - !Ref ccWebServerScaleUpPolicy
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref ccWebServerASG
+      ComparisonOperator: LessThanThreshold

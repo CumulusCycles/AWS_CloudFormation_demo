@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  ccAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ccAlb
+      SecurityGroups: 
+        - Fn::ImportValue: ccVPC-ccALBSecurityGroup
+      Subnets:
+        - Fn::ImportValue: ccVPC-ccPublicSubnet1
+        - Fn::ImportValue: ccVPC-ccPublicSubnet2
+  
+  ccAlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: ccWebServer
+      Port: 80
+      Protocol: HTTP
+      Targets:
+        - Id: 
+            Fn::ImportValue: 
+             !Sub 'ccWebServers-ccWebServer1'
+          Port: 80
+        - Id: 
+            Fn::ImportValue:
+             !Sub 'ccWebServers-ccWebServer2'
+          Port: 80
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Fn::ImportValue: ccVPC-ccVPC
+
+  ccAlbListenerNoSSLCert:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ccAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect
+      
+  ccAlbListenerSSLCert:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ccAlb
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: '{{resolve:ssm:ACM-Cert:1}}'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ccAlbTargetGroup
+
+Outputs:
+  ccAlbTargetGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccAlbTargetGroup
+    Value: !Ref ccAlbTargetGroup
+  
+  ccAlbDnsName:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccAlbDnsName
+    Value:  !GetAtt ccAlb.DNSName
+
+  ccAlbZoneId:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccAlbZoneID
+    Value:  !GetAtt ccAlb.CanonicalHostedZoneID

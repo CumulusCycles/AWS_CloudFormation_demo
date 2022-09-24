@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  ccDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet for DB
+      SubnetIds: 
+        - Fn::ImportValue: ccVPC-ccPrivateDBSubnet1
+        - Fn::ImportValue: ccVPC-ccPrivateDBSubnet2
+      Tags:
+        - Key: Name
+          Value: ccDBSubnetGroup
+
+  ccDatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '20'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      BackupRetentionPeriod:  0
+      DBInstanceClass:  db.t2.micro
+      DBInstanceIdentifier: mysqldb
+      DBName: '{{resolve:ssm:dbName:1}}' # Dynamic Ref to SSM Param Store
+      DBSubnetGroupName: !Ref ccDBSubnetGroup
+      Engine: MySQL
+      EngineVersion: 8.0.28
+      MasterUsername: '{{resolve:ssm:dbUserName:1}}' 
+      MasterUserPassword: '{{resolve:ssm:dbUserPassword:1}}' 
+      MultiAZ:  false
+      VPCSecurityGroups: 
+        - Fn::ImportValue: ccVPC-ccDBSecurityGroup

@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  # The VPC
+  ccVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: ccVPC
+
+  # IGW
+  ccIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+          - Key: Name
+            Value: ccIGW
+
+  # Attach IGW to VPC
+  ccIGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref ccIGW
+      VpcId: !Ref ccVPC
+
+
+  # Public Subnets
+  ccPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock:  10.0.0.0/24
+      MapPublicIpOnLaunch: true
+      VpcId:  !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPublicSubnet1
+
+  ccPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPublicSubnet2
+
+  # Public RT
+  ccPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPublicRouteTable
+
+  # Public Route
+  ccPublicRoute: 
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref ccIGW
+      RouteTableId: !Ref ccPublicRouteTable
+
+
+  # Public RT Associations
+  ccPublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ccPublicRouteTable
+      SubnetId: !Ref ccPublicSubnet1
+
+  ccPublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ccPublicRouteTable
+      SubnetId: !Ref ccPublicSubnet2
+
+
+  # Private App Subnets
+  ccPrivateAppSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock:  10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      VpcId:  !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPrivateAppSubnet1
+
+  ccPrivateAppSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPrivateAppSubnet2
+
+  # Private DB Subnets
+  ccPrivateDBSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock:  10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      VpcId:  !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPrivateDBSubnet1
+
+  ccPrivateDBSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.5.0/24
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPrivateDBSubnet2
+
+
+  # SG for ALB (Port 80)
+  ccALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable Ports 80, 443
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccALBSecurityGroup
+      
+
+  # SG for SSH (Port 22)      
+  ccSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable Port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccSSHSecurityGroup
+
+  # SG for WebServers (Ports 80, 443)
+  ccWebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable Ports 80, 443
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ccALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ccALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref ccSSHSecurityGroup
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccWebServerSecurityGroup
+
+  # SG for DB (RDS, MySQL Port 3306)
+  ccDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable Ports 3306
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref ccWebServerSecurityGroup
+      VpcId: !Ref ccVPC
+      Tags:
+        - Key: Name
+          Value: ccDBSecurityGroup
+
+Outputs:
+  ccVPC:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccVPC
+    Value: !Ref ccVPC
+
+  ccPublicSubnet1:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccPublicSubnet1
+    Value: !Ref ccPublicSubnet1
+
+  ccPublicSubnet2:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccPublicSubnet2
+    Value: !Ref ccPublicSubnet2
+
+  ccPrivateAppSubnet1:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccPrivateAppSubnet1
+    Value: !Ref ccPrivateAppSubnet1
+
+  ccPrivateAppSubnet2:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccPrivateAppSubnet2
+    Value: !Ref ccPrivateAppSubnet2
+
+  ccPrivateDBSubnet1:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccPrivateDBSubnet1
+    Value: !Ref ccPrivateDBSubnet1
+
+  ccPrivateDBSubnet2:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccPrivateDBSubnet2
+    Value: !Ref ccPrivateDBSubnet2
+
+  ccALBSecurityGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccALBSecurityGroup
+    Value: !Ref ccALBSecurityGroup
+
+  ccSSHSecurityGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccSSHSecurityGroup
+    Value: !Ref ccSSHSecurityGroup
+
+  ccWebServerSecurityGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccWebServerSecurityGroup
+    Value: !Ref ccWebServerSecurityGroup
+  
+  ccDBSecurityGroup:
+    Export:
+      Name: !Sub ${AWS::StackName}-ccDBSecurityGroup
+    Value: !Ref ccDBSecurityGroup

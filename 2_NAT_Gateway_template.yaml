@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  ccNatGateway1EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+      Tags:
+        - Key: Name
+          Value: ccNatGateway1EIP
+
+  ccNatGateway2EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+      Tags:
+        - Key: Name
+          Value: ccNatGateway2EIP
+
+  ccNatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ccNatGateway1EIP.AllocationId
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPublicSubnet1
+      Tags:
+        - Key: Name
+          Value: ccNatGateway1
+
+  ccNatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ccNatGateway2EIP.AllocationId
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPublicSubnet2
+      Tags:
+        - Key: Name
+          Value: ccNatGateway2
+
+  ccPrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: 
+        Fn::ImportValue: ccVPC-ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPrivateRouteTable1
+
+  ccPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref ccNatGateway1
+      RouteTableId: !Ref ccPrivateRouteTable1
+
+  ccPrivateAppSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ccPrivateRouteTable1
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPrivateAppSubnet1
+
+  ccPrivateDBSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ccPrivateRouteTable1
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPrivateDBSubnet1
+
+  ccPrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: 
+        Fn::ImportValue: ccVPC-ccVPC
+      Tags:
+        - Key: Name
+          Value: ccPrivateRouteTable2
+
+  ccPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref ccNatGateway2
+      RouteTableId: !Ref ccPrivateRouteTable2
+
+  ccPrivateAppSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ccPrivateRouteTable2
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPrivateAppSubnet2
+
+  ccPrivateDBSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ccPrivateRouteTable2
+      SubnetId:
+        Fn::ImportValue: ccVPC-ccPrivateDBSubnet2
